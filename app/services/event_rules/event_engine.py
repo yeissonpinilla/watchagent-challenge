@@ -1,5 +1,5 @@
 from app.db.session import SessionLocal
-from app.db.models import MonthlyBaseline, HistoricalReading, Event
+from app.db.models import MonthlyBaseline, HistoricalReading, Event, LiveReading
 
 from app.services.event_rules.temperature_anomaly import TemperatureAnomalyRule
 from app.services.event_rules.wind_spike import WindSpikeRule
@@ -23,12 +23,11 @@ class EventEngine:
 
     def get_previous(self, db, city):
         return (
-            db.query(HistoricalReading)
-            .filter_by(city=city)
-            .order_by(HistoricalReading.timestamp.desc())
-            .offset(1)
-            .first()
-        )
+        db.query(LiveReading)   # <- CAMBIO CLAVE
+        .filter_by(city=city)
+        .order_by(LiveReading.timestamp.desc())
+        .first()
+    )
 
     def run(self, reading):
         db = SessionLocal()
