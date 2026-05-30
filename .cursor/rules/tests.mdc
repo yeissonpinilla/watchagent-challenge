@@ -1,0 +1,48 @@
+---
+description: When asked to implement unit tests, or when asked to implement a new function. Every function should have a unit test linked to it.
+alwaysApply: false
+---
+# Test Conventions
+
+## What to test
+1. Every event rule needs at least two tests:
+- One where the rule fires (positive case)
+- One where it doesn't (negative case)
+
+2. Every function should have its own unit test, mocking the data it expects as input, and verifying the output.
+
+3. Test for deduplication. A poll for a city and timestamp should never be stored twice.
+
+4. Perform schema testing on the APIs. Check for what it should receive, and what it should return. Perform positive and negative tests,
+where the endpoint returns 200, and error codes.
+
+## How to write tests
+Use SimpleNamespace to build fake readings and baselines. No need to access DB for rule tests.
+
+```python
+reading = SimpleNamespace(
+    city="Toronto",
+    timestamp="2026-05-01T12:00",
+    temperature_2m=28.0,
+    wind_speed_10m=12.0,
+    precipitation=0.0
+)
+
+baseline = SimpleNamespace(
+    temp_mean=15.0,
+    temp_std=3.0,
+    temp_p5=10.0,
+    temp_p95=20.0,
+    wind_mean=10.0,
+    wind_std=2.0,
+    precip_mean=0.5
+)
+```
+
+## What to mock
+- Mock `requests.get` for any test that would call Open-Meteo
+- Mock `SessionLocal` for poller and evenbt engine tests
+- Never call the real weather API in tests
+
+## What makes a good event detection test
+The baseline values must make the threshold math obvious. If `temp_mean=15` and `temp_std=3`, a reading of `28.0` clearly exceeds `mean + 2*std = 21`. A reading of `16.0` clearly does not. Avoid values where it's ambiguous whether the rule should fire.

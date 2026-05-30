@@ -1,0 +1,52 @@
+---
+description: When we start reviewing the quality of my event definitions, you might be asked to create new events. In that case, the new events (and when modifying existing ones) this rule should be applied.
+alwaysApply: false
+---
+# Event Rules Contract
+
+## Interface
+- Every event rule must implement the interface available at app/services/event_rules/base.py
+- Every event rule must read from LiveReading
+- If an event rule needs it, it could use baseline
+- If an event rule needs it, it could use previous
+- Returns a list of event dicts. Returns `[]` if no event is triggered. Never returns None.
+
+## Event dict shape
+Every dict returned by `evaluate()` must contain these exact keys:
+```python
+{
+    "type": str,       
+    "city": str,       
+    "timestamp": str,
+    "value": float,    
+    "reason": str, 
+}
+```
+
+## Safety rules
+- Always watch for `baseline is None` and `previous is None` before using them. Return `[]` if required context is missing.
+- Never raise exceptions inside `evaluate()`. Catch locally and return `[]`.
+- Rules are pure functions.
+- Never log inside a rule. See `logging.mdc`.
+
+## Thresholds
+Thresholds must be derived from baseline stats, not hardcoded constants.
+
+**Good:**
+```python
+threshold = baseline.temp_mean + 2 * baseline.temp_std
+if reading.temperature_2m > threshold:
+    ...
+```
+
+**Bad:**
+```python
+if reading.temperature_2m > 30: 
+    ...
+```
+
+## Adding a new rule
+1. Create a new file in `app/services/event_rules/` 
+2. Implement the `evaluate()` interface above
+3. Put it in `app/services/event_engine.py`
+4. Add at least one positive test (should fire) and one negative test (should not fire) in `tests/`
