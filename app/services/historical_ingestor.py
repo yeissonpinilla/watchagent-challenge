@@ -12,7 +12,7 @@ def fetch(city, lat, lon):
         "longitude": lon,
         "start_date": str(date.today() - timedelta(days=HISTORICAL_DATA_DAYS)),
         "end_date": str(date.today()),
-        "hourly": "temperature_2m,precipitation,wind_speed_10m"
+        "hourly": "temperature_2m,precipitation,wind_speed_10m,apparent_temperature,weather_code"
     }
 
     return requests.get(url, params=params).json()
@@ -24,6 +24,8 @@ def parse(data, city):
     temps = hourly["temperature_2m"]
     wind = hourly["wind_speed_10m"]
     prec = hourly["precipitation"]
+    app_temp = hourly["apparent_temperature"]
+    weather_code = hourly["weather_code"]
 
     rows = []
 
@@ -34,21 +36,23 @@ def parse(data, city):
             "temperature_2m": temps[i],
             "wind_speed_10m": wind[i],
             "precipitation": prec[i],
+            "apparent_temperature": app_temp[i],
+            "weather_code": weather_code[i],
         })
 
     return rows
 
 def store(session, rows):
-    for r in rows:
+    for row in rows:
         exists = session.query(HistoricalReading).filter_by(
-            city=r["city"],
-            timestamp=r["timestamp"]
+            city=row["city"],
+            timestamp=row["timestamp"]
         ).first()
 
         if exists:
             continue
 
-        session.add(HistoricalReading(**r))
+        session.add(HistoricalReading(**row))
 
     session.commit()
 
