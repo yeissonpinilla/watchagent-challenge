@@ -46,3 +46,6 @@ baseline = SimpleNamespace(
 
 ## What makes a good event detection test
 The baseline values must make the threshold math obvious. If `temp_mean=15` and `temp_std=3`, a reading of `28.0` clearly exceeds `mean + 2*std = 21`. A reading of `16.0` clearly does not. Avoid values where it's ambiguous whether the rule should fire.
+
+## Execution
+Always execute your created tests and validate whether there are error in the terminal or not. If there are errors, attempt to fix them a maximum of three times. If error persists, give up on the task, and ask for human in the loop check.
