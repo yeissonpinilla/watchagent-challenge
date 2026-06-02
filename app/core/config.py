@@ -12,3 +12,6 @@ CITIES = {
 }
 
 HISTORICAL_DATA_DAYS = 90
+
+POLL_INTERVAL_SECONDS = 300 
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"

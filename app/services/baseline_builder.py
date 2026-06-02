@@ -14,15 +14,17 @@ def parse_month(ts: str) -> int:
 
 def load_historical():
     db = SessionLocal()
-    return db.query(HistoricalReading).all()
+    historical_readings = db.query(HistoricalReading).all()
+    db.close()
 
+    return historical_readings
 
 def group_by_city_month(rows):
     grouped = defaultdict(list)
 
-    for r in rows:
-        month = parse_month(r.timestamp)
-        grouped[(r.city, month)].append(r)
+    for row in rows:
+        month = parse_month(row.timestamp)
+        grouped[(row.city, month)].append(row)
 
     return grouped
 

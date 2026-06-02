@@ -1,0 +1,31 @@
+---
+alwaysApply: true
+---
+# Rules before doing a git push
+
+## Before doing a git push, all changes should have been commited with specific messages.
+
+Commits should specify what changes were done. Commits should be done for a task completed, one commit for one task. 
+
+**Correct:**
+```python
+"Fix bug where current reading was being compared against itself instead of previous reading."
+```
+
+**Correct:**
+```python
+"Implement POST, GET, and DELETE methods for endpoint create books."
+```
+
+**Wrong:**
+```python
+"Fixed many issues"
+```
+
+**Wrong:**
+```python
+"Changes"
+```
+
+## MUST DO:
+Before pushing code to the remote repository, agent MUST ask user's approval. After approval has been provided, the agent can continue doing the rest of the task requested.

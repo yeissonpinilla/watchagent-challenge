@@ -1,0 +1,34 @@
+---
+description: When consuming APIs, or when serving an API, errors will happen at any time. When updating, or creating new functions that consume APIs or serves APIs, logging should be included and this rule should be applied.
+alwaysApply: false
+---
+# Logging Conventions
+
+## Format
+I need to keep logs as part of the challenge requirements. 
+
+If the logs are part of an error, they should contain enough information to know what happened, and for which city. 
+If the logs are part of an event detected, they should contain enough information to know what happened, in which city, when, and why the system considered it notable.
+
+**Correct:**
+```python
+logger.warning(f"Failed to poll {city}: HTTP error {status}")
+logger.info(f"Stored new reading for {city} at {timestamp}")
+```
+
+**Wrong:**
+```python
+logger.warning(f"poll error")
+logger.info("Success")
+```
+
+## Levels
+- `logger.info` — successful operations: reading stored, poll cycle completed, baselines built
+- `logger.warning` — recoverable failures: fetch timeout, HTTP error, empty API response, duplicate skipped
+- `logger.error` — unexpected failures that break a full cycle
+
+## Polling specifications
+- Only log when events are detected, not on every poll cycle.
+- A failed fetch for one city must not stop the poll cycle for other cities. Log at WARNING and continue.
+- Always include the city name in the log if the action causing the log deals with cities.
+
