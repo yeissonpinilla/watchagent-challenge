@@ -11,7 +11,7 @@ CITIES = {
     "Vancouver": (49.25, -123.12),
 }
 
-HISTORICAL_DATA_DAYS = int(os.getenv("HISTORICAL_DATA_DAYS", "90"))
+HISTORICAL_DATA_DAYS = int(os.getenv("HISTORICAL_DATA_DAYS", "500"))
 
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "300"))
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
