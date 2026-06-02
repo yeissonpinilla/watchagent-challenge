@@ -2,6 +2,29 @@
 
 A weather monitoring service for Ottawa, Toronto, and Vancouver. It polls live conditions from Open-Meteo, detects notable weather events using historical baselines and recent readings, stores everything in SQLite, and exposes the data through a REST API.
 
+## Table of contents
+
+- [Architecture](#architecture)
+- [Technology choices](#technology-choices)
+- [Setup and run](#setup-and-run)
+  - [Docker (recommended)](#docker-recommended)
+  - [Local development](#local-development)
+- [API reference](#api-reference)
+  - [`GET /health`](#get-health)
+  - [`GET /readings`](#get-readings)
+  - [`GET /events`](#get-events)
+- [Event detection design](#event-detection-design)
+  - [Historical context (monthly baselines)](#historical-context-monthly-baselines)
+  - [Recent context (last 24 hours of live readings)](#recent-context-last-24-hours-of-live-readings)
+- [Tests](#tests)
+- [Environment variables](#environment-variables)
+- [Cursor setup](#cursor-setup)
+  - [Rules](#rules-cursorrules)
+  - [Agent](#agent-cursoragents)
+  - [Skill](#skill-cursorskillsweather-data-analysis)
+  - [Verifying the skill works](#verifying-the-skill-works)
+- [Project layout](#project-layout)
+
 ## Architecture
 
 ```
