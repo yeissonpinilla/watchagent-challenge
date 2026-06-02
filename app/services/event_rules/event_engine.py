@@ -4,6 +4,9 @@ from app.db.models import MonthlyBaseline, Event, LiveReading
 from app.services.event_rules.temperature_anomaly import TemperatureAnomalyRule
 from app.services.event_rules.wind_spike import WindSpikeRule
 from app.services.event_rules.sudden_change import SuddenTemperatureChangeRule
+from app.services.event_rules.sudden_wind_change import SuddenWindChangeRule
+from app.services.event_rules.record_break import RecordBreakRule
+from app.services.event_rules.precipitation_change import PrecipitationChangeRule
 
 
 class EventEngine:
@@ -12,7 +15,10 @@ class EventEngine:
         self.rules = [
             TemperatureAnomalyRule(),
             WindSpikeRule(),
+            RecordBreakRule(),
             SuddenTemperatureChangeRule(),
+            SuddenWindChangeRule(),
+            PrecipitationChangeRule(),
         ]
 
     def get_baseline(self, db, city, month):
@@ -29,6 +35,16 @@ class EventEngine:
 
         return query.order_by(LiveReading.timestamp.desc()).first()
 
+    def get_recent_readings(self, db, city, current_timestamp, limit=24):
+        return (
+            db.query(LiveReading)
+            .filter_by(city=city)
+            .filter(LiveReading.timestamp != current_timestamp)
+            .order_by(LiveReading.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
     def run(self, reading):
         db = SessionLocal()
 
@@ -36,11 +52,12 @@ class EventEngine:
 
         baseline = self.get_baseline(db, reading.city, month)
         previous = self.get_previous(db, reading.city, reading.timestamp)
+        recent = self.get_recent_readings(db, reading.city, reading.timestamp)
 
         events = []
 
         for rule in self.rules:
-            events.extend(rule.evaluate(reading, baseline, previous))
+            events.extend(rule.evaluate(reading, baseline, previous, recent))
 
         for e in events:
             db.add(Event(
@@ -55,80 +72,3 @@ class EventEngine:
         db.close()
 
         return events
-
-if __name__ == "__main__":
-    from types import SimpleNamespace
-
-    engine = EventEngine()
-
-    # Fake baseline (simulate a “normal May in Toronto”)
-    fake_baseline = SimpleNamespace(
-        temp_mean=15,
-        temp_std=3,
-        temp_p5=10,
-        temp_p95=20,
-        wind_mean=10,
-        wind_std=2,
-        precip_mean=1.0
-    )
-
-    # Fake previous reading
-    prev = SimpleNamespace(
-        temperature_2m=15
-    )
-
-    # Override engine DB lookups for testing
-    engine.get_baseline = lambda db, city, month: fake_baseline
-    engine.get_previous = lambda db, city: prev
-
-    # Create test readings
-    test_readings = [
-        # Normal reading (should NOT trigger much)
-        SimpleNamespace(
-            city="Toronto",
-            timestamp="2026-05-30T10:00",
-            temperature_2m=15,
-            wind_speed_10m=10,
-            precipitation=0.0
-        ),
-
-        # Heat anomaly (should trigger TEMP_ANOMALY)
-        SimpleNamespace(
-            city="Toronto",
-            timestamp="2026-05-30T11:00",
-            temperature_2m=25,
-            wind_speed_10m=10,
-            precipitation=0.0
-        ),
-
-        # Wind spike (should trigger WIND_SPIKE)
-        SimpleNamespace(
-            city="Toronto",
-            timestamp="2026-05-30T12:00",
-            temperature_2m=15,
-            wind_speed_10m=25,
-            precipitation=0.0
-        ),
-
-        # Sudden temperature change (should trigger SUDDEN_TEMP_CHANGE)
-        SimpleNamespace(
-            city="Toronto",
-            timestamp="2026-05-30T13:00",
-            temperature_2m=30,
-            wind_speed_10m=10,
-            precipitation=0.0
-        ),
-    ]
-
-    print("\n=== EVENT ENGINE TEST START ===\n")
-
-    for r in test_readings:
-        events = engine.run(r)
-
-        print(f"\nReading: {r.timestamp} | temp={r.temperature_2m} wind={r.wind_speed_10m}")
-        print(f"Events triggered: {len(events)}")
-
-        for e in events:
-            print(" ->", e["type"], "|", e["reason"])
-
-    print("\n=== TEST COMPLETE ===\n")

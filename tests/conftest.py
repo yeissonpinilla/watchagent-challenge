@@ -9,6 +9,8 @@ def baseline():
         temp_std=3.0,
         temp_p5=10.0,
         temp_p95=20.0,
+        temp_min=10.0,
+        temp_max=20.0,
         wind_mean=10.0,
         wind_std=2.0,
         precip_mean=0.5,
