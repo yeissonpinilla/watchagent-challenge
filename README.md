@@ -94,7 +94,7 @@ A weather monitoring service for Ottawa, Toronto, and Vancouver. It polls live c
 ### Docker (recommended)
 
 ```bash
-git clone <your-repo>
+git clone git@github.com:yeissonpinilla/watchagent-challenge.git
 cd watchagent-challenge
 cp .env.example .env
 docker compose up --build
