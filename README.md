@@ -5,30 +5,56 @@ A weather monitoring service for Ottawa, Toronto, and Vancouver. It polls live c
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Open-Meteo │────▶│  Poller          │────▶│  SQLite DB      │
-│  Forecast   │     │  (every 5 min)   │     │  live_readings  │
-└─────────────┘     └────────┬─────────┘     │  events         │
-                             │                │  baselines      │
-                             ▼                └────────┬────────┘
-                    ┌──────────────────┐              │
-                    │  Event Engine    │◀─────────────┘
-                    │  (6 rule types)  │
-                    └──────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────┐
-                    │  FastAPI         │
-                    │  :8000           │
-                    └──────────────────┘
+┌──────────────────────── BOOTSTRAP (first run only) ────────────────────────┐
+│                                                                           │
+│  Open-Meteo          historical_ingestor          historical_readings   │
+│  Archive API    ──▶  (3 cities, ~90 days)    ──▶  (deduped hourly rows) │
+│                                                                           │
+│                              │                                            │
+│                              ▼                                            │
+│                    baseline_builder  ──▶  monthly_baselines               │
+│                    (per city + month)     (mean, std, min, max, p5/p95)   │
+│                                                                           │
+└───────────────────────────────────┬───────────────────────────────────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   SQLite (./data)   │
+                         │─────────────────────│
+                         │ historical_readings │
+                         │ monthly_baselines   │
+                         │ live_readings       │
+                         │ events              │
+                         └──────────┬──────────┘
+                                    │
+┌──────────────────────── LIVE LOOP (every 5 min) ─────────────────────────┐
+│                                    │                                      │
+│  Open-Meteo          poller        │                                      │
+│  Forecast API   ──▶ (dedup store)─┼──▶ live_readings                    │
+│                                    │                                      │
+│                                    ▼                                      │
+│                         event_engine (6 rules)                            │
+│                         uses: baselines + previous reading +            │
+│                               last 24 live readings                       │
+│                                    │                                      │
+│                                    ▼                                      │
+│                              events                                       │
+└───────────────────────────────────┬───────────────────────────────────────┘
+                                    │
+                                    ▼
+                           FastAPI (:8000)
+                           /health /readings /events
+
+         Cursor skill: weather-data-analysis/scripts/analyze.py
+                         (reads same SQLite DB for ad-hoc analysis)
 ```
 
-**Bootstrap (first run):** On startup, the service initializes the database. If no monthly baselines exist, it ingests ~90 days of historical archive data from Open-Meteo and precomputes per-city, per-month statistics used by event rules.
+**Bootstrap (first run):** `app/bootstrap.py` creates tables. If `monthly_baselines` is empty, it calls `historical_ingestor` (Open-Meteo archive) then `baseline_builder`. Live polling never hits the archive API after that.
 
-**Data flow:**
+**Live data flow:**
 1. Poller fetches current conditions for each city.
 2. Readings are stored only when `(city, timestamp)` is new (deduplication).
-3. Event engine evaluates the reading against baselines, the previous reading, and up to 24 recent readings.
+3. Event engine evaluates the reading against monthly baselines, the previous live reading, and up to 24 recent live readings.
 4. Triggered events are persisted and queryable via the API.
 
 ## Technology choices
@@ -227,6 +253,31 @@ python .cursor/skills/weather-data-analysis/scripts/analyze.py recent-trends --c
 ```
 
 See `.cursor/skills/weather-data-analysis/SKILL.md` for the full command list.
+
+#### Verifying the skill works
+
+1. **Have data in the database** — either run the stack or bootstrap locally:
+   ```bash
+   docker compose up --build
+   # or: python -m app.bootstrap && python -m app.services.poller  # one cycle, then stop
+   ```
+   Confirm `./data/watchagent.db` exists and `/health` shows `readings_stored > 0`.
+
+2. **Run a command from the repo root** (same machine as the DB file):
+   ```bash
+   python .cursor/skills/weather-data-analysis/scripts/analyze.py summary
+   ```
+   You should get JSON with `readings_stored`, `events_stored`, and `latest_reading_by_city` for Ottawa, Toronto, and Vancouver.
+
+3. **Try another command** to confirm queries work:
+   ```bash
+   python .cursor/skills/weather-data-analysis/scripts/analyze.py compare-cities
+   python .cursor/skills/weather-data-analysis/scripts/analyze.py events-breakdown
+   ```
+
+4. **Use it in Cursor** — in chat, ask something like: *“How many events do we have per city?”* and invoke the **weather-data-analysis** skill (or run the script above). The agent should run `analyze.py` and summarize the JSON.
+
+If `readings_stored` is 0, start Docker or run bootstrap + at least one poll cycle first. If you see `ModuleNotFoundError: app`, run commands from the project root (`d:\watchagent-challenge`), not from inside `.cursor/`.
 
 ## Project layout
 
