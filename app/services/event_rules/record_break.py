@@ -1,33 +1,32 @@
 from .base import EventRule
 
 
-class TemperatureAnomalyRule(EventRule):
+class RecordBreakRule(EventRule):
 
     def evaluate(self, reading, baseline, previous_reading, recent_readings=None):
         try:
-            events = []
-
             if not baseline:
-                return events
+                return []
 
+            events = []
             temp = reading.temperature_2m
 
-            if abs(temp - baseline.temp_mean) > 2 * baseline.temp_std:
+            if temp > baseline.temp_max:
                 events.append({
-                    "type": "TEMP_ANOMALY",
+                    "type": "RECORD_HIGH",
                     "city": reading.city,
                     "timestamp": reading.timestamp,
                     "value": temp,
-                    "reason": "outside 2 std dev of monthly baseline"
+                    "reason": "new monthly maximum temperature vs historical baseline",
                 })
 
-            if temp < baseline.temp_p5 or temp > baseline.temp_p95:
+            if temp < baseline.temp_min:
                 events.append({
-                    "type": "TEMP_PERCENTILE_ANOMALY",
+                    "type": "RECORD_LOW",
                     "city": reading.city,
                     "timestamp": reading.timestamp,
                     "value": temp,
-                    "reason": "outside 5-95 percentile baseline"
+                    "reason": "new monthly minimum temperature vs historical baseline",
                 })
 
             return events

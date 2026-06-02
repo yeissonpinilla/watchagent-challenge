@@ -3,7 +3,7 @@ from statistics import stdev
 from .base import EventRule
 
 
-class SuddenTemperatureChangeRule(EventRule):
+class SuddenWindChangeRule(EventRule):
 
     def evaluate(self, reading, baseline, previous_reading, recent_readings=None):
         try:
@@ -11,25 +11,25 @@ class SuddenTemperatureChangeRule(EventRule):
                 return []
 
             recent = recent_readings or []
-            temps = [r.temperature_2m for r in recent]
+            winds = [r.wind_speed_10m for r in recent]
 
-            if len(temps) < 2:
+            if len(winds) < 2:
                 return []
 
-            temp_std = stdev(temps)
-            if temp_std == 0:
+            wind_std = stdev(winds)
+            if wind_std == 0:
                 return []
 
-            delta = abs(reading.temperature_2m - previous_reading.temperature_2m)
-            threshold = 2 * temp_std
+            delta = abs(reading.wind_speed_10m - previous_reading.wind_speed_10m)
+            threshold = 2 * wind_std
 
             if delta > threshold:
                 return [{
-                    "type": "SUDDEN_TEMP_CHANGE",
+                    "type": "SUDDEN_WIND_CHANGE",
                     "city": reading.city,
                     "timestamp": reading.timestamp,
                     "value": delta,
-                    "reason": "temperature change exceeds 2x rolling std of recent readings",
+                    "reason": "wind change exceeds 2x rolling std of recent readings",
                 }]
 
             return []
