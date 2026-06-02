@@ -11,7 +11,7 @@ def test_run_returns_events_from_rules(mock_session_local, baseline):
 
     engine = EventEngine()
     engine.get_baseline = lambda db, city, month: baseline
-    engine.get_previous = lambda db, city: SimpleNamespace(temperature_2m=15.0)
+    engine.get_previous = lambda db, city, current_timestamp=None: SimpleNamespace(temperature_2m=15.0)
 
     reading = SimpleNamespace(
         city="Toronto",
@@ -40,7 +40,7 @@ def test_run_returns_empty_when_no_rules_fire(mock_session_local, baseline):
 
     engine = EventEngine()
     engine.get_baseline = lambda db, city, month: baseline
-    engine.get_previous = lambda db, city: SimpleNamespace(temperature_2m=15.0)
+    engine.get_previous = lambda db, city, current_timestamp=None: SimpleNamespace(temperature_2m=15.0)
 
     reading = SimpleNamespace(
         city="Toronto",
@@ -71,7 +71,7 @@ def test_run_extracts_month_from_timestamp(mock_session_local):
 
     engine = EventEngine()
     engine.get_baseline = capture_baseline
-    engine.get_previous = lambda db, city: None
+    engine.get_previous = lambda db, city, current_timestamp=None: None
 
     reading = SimpleNamespace(
         city="Toronto",
@@ -84,3 +84,31 @@ def test_run_extracts_month_from_timestamp(mock_session_local):
     engine.run(reading)
 
     assert captured["month"] == 7
+
+
+def test_get_previous_excludes_current_reading():
+    mock_db = MagicMock()
+    current = SimpleNamespace(
+        city="Toronto",
+        timestamp="2026-05-30T11:00",
+        temperature_2m=20.0,
+    )
+    previous = SimpleNamespace(
+        city="Toronto",
+        timestamp="2026-05-30T10:00",
+        temperature_2m=15.0,
+    )
+
+    filtered_query = MagicMock()
+    filtered_query.order_by.return_value.first.return_value = previous
+
+    base_query = MagicMock()
+    base_query.filter.return_value = filtered_query
+    mock_db.query.return_value.filter_by.return_value = base_query
+
+    engine = EventEngine()
+    result = engine.get_previous(mock_db, current.city, current.timestamp)
+
+    assert result is previous
+    base_query.filter.assert_called_once()
+    filtered_query.order_by.assert_called_once()
