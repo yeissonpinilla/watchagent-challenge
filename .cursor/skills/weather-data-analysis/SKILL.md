@@ -8,7 +8,7 @@ description: >-
 
 # Weather Data Analysis
 
-Run the analysis script against the project database. Default DB path: `./data/watchagent.db` (set `DATABASE_URL` to override).
+Run the analysis script against the project database. Default DB path: `./data/watchagent.db`
 
 ## Commands
 
