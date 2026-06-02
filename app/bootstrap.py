@@ -25,7 +25,15 @@ def main():
 
             ingest_historical()
             build_baselines()
-            logger.info("baselines_ready")
+
+            from app.db.models import HistoricalReading
+            historical_count = db.query(HistoricalReading).count()
+            baseline_count = db.query(MonthlyBaseline).count()
+            logger.info(
+                "baselines_ready historical_readings=%s monthly_baselines=%s",
+                historical_count,
+                baseline_count,
+            )
     finally:
         db.close()
 

@@ -236,7 +236,9 @@ See `.env.example`:
 |----------|---------|-------------|
 | `DATABASE_URL` | `sqlite:///./data/watchagent.db` | SQLite database path |
 | `POLL_INTERVAL_SECONDS` | `300` | Seconds between poll cycles |
-| `HISTORICAL_DATA_DAYS` | `90` | Days of archive data for baseline build |
+| `HISTORICAL_DATA_DAYS` | `500` | Days of archive data for baseline build |
+
+**Note:** `/health` only reports **live** readings and events (`live_readings`, `events` tables). Historical archive rows live in `historical_readings` and are not included in `readings_stored`. After a fresh start, expect `readings_stored` ≈ 3 (one per city) until hourly timestamps change; expect `historical_readings_stored` in the thousands once bootstrap finishes (check Docker logs for `baselines_ready` or run the data analysis skill `summary` command).
 
 ## Cursor setup
 

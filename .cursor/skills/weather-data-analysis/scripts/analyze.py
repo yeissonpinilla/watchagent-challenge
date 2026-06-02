@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.db.models import Event, LiveReading, MonthlyBaseline  # noqa: E402
+from app.db.models import Event, HistoricalReading, LiveReading, MonthlyBaseline, MonthlyBaseline  # noqa: E402
 
 DEFAULT_DB = os.getenv("DATABASE_URL", "sqlite:///./data/watchagent.db")
 
@@ -46,7 +46,9 @@ def get_session(database_url: str):
 
 
 def cmd_summary(db) -> dict:
-    reading_count = db.query(LiveReading).count()
+    live_count = db.query(LiveReading).count()
+    historical_count = db.query(HistoricalReading).count()
+    baseline_count = db.query(MonthlyBaseline).count()
     event_count = db.query(Event).count()
     cities = [row[0] for row in db.query(LiveReading.city).distinct().all()]
 
@@ -68,9 +70,11 @@ def cmd_summary(db) -> dict:
 
     return {
         "analysis": "summary",
-        "readings_stored": reading_count,
+        "readings_stored": live_count,
+        "historical_readings_stored": historical_count,
+        "monthly_baselines_stored": baseline_count,
         "events_stored": event_count,
-        "cities_with_data": cities,
+        "cities_with_live_data": cities,
         "latest_reading_by_city": latest_by_city,
     }
 
