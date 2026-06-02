@@ -169,7 +169,7 @@ Events answer: **what happened, in which city, when, and why it was notable.** T
 
 ### Historical context (monthly baselines)
 
-On first run, ~90 days of archive data (`HISTORICAL_DATA_DAYS`) is ingested per city. Monthly baselines store mean, std, min, max, and p5/p95 for temperature and wind. Live polling never hits the archive API.
+On first run, ~500 days of archive data (`HISTORICAL_DATA_DAYS`) is ingested per city. Monthly baselines store mean, std, min, max, and p5/p95 for temperature and wind. Live polling never hits the archive API. The idea with these 500 days of historic data is to detect when a city breaks historical records on temperature (both minimum and maximum).
 
 | Event type | Rule | Trigger |
 |------------|------|---------|
