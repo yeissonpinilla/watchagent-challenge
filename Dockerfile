@@ -10,7 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/data && chmod +x /app/scripts/entrypoint.sh
+RUN mkdir -p /app/data \
+    && sed -i 's/\r$//' /app/scripts/entrypoint.sh \
+    && chmod +x /app/scripts/entrypoint.sh
 
 EXPOSE 8000
 
