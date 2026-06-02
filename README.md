@@ -1,48 +1,247 @@
-# watchagent-challenge
-Build a service that monitors live weather across three cities, decides when something worth noticing has happened, and exposes that information through an API. 
+# WatchAgent
 
-## 1. Events Definition
-The first step to solve this challenge was thinking deeply, what does an event (defined as "when something worth noticing has happened" in the challenge) mean?
+A weather monitoring service for Ottawa, Toronto, and Vancouver. It polls live conditions from Open-Meteo, detects notable weather events using historical baselines and recent readings, stores everything in SQLite, and exposes the data through a REST API.
 
-Comparing weather data withing the same day, or even week, might not be enough to identify events, since for cities with extreme weather like Ottawa, a drop of 10º C from midday to midnight can be considered normal, while this same drop in Vancouver can be considered extreme. This is why our events will be partially based on historical data.
+## Architecture
 
-### Historical Data
-Due to time constraints, I have decided to limit the historical data to the last 5 years' data for each city proposed in the challenge (Ottawa, Toronto, Vancouver). Historical data will be used to establish monthly baseline distributions for temperature, precipitation, and wind speed. These distributions will be used to identify readings that are statistically unusual for a given city and month.
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Open-Meteo │────▶│  Poller          │────▶│  SQLite DB      │
+│  Forecast   │     │  (every 5 min)   │     │  live_readings  │
+└─────────────┘     └────────┬─────────┘     │  events         │
+                             │                │  baselines      │
+                             ▼                └────────┬────────┘
+                    ┌──────────────────┐              │
+                    │  Event Engine    │◀─────────────┘
+                    │  (6 rule types)  │
+                    └──────────────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │  FastAPI         │
+                    │  :8000           │
+                    └──────────────────┘
+```
 
-This data is considered relevant for event detection, given that in months like October, or November, where the transition from summer to winter (autumn) can experience more drastic wheather changes compared to more stable weather months such as June and July. Therefore, a 15º C change from Monday to Friday in October might not be as relevant as the same change in July.
+**Bootstrap (first run):** On startup, the service initializes the database. If no monthly baselines exist, it ingests ~90 days of historical archive data from Open-Meteo and precomputes per-city, per-month statistics used by event rules.
 
-Finally, if historically the coldest temperature for summer has been 23º C, and a reading in summer comes as 22º, this breaks a historical local minimum, which can be considered an event. Such events are notable because they represent conditions that fall outside the historical range observed for that city and season.
+**Data flow:**
+1. Poller fetches current conditions for each city.
+2. Readings are stored only when `(city, timestamp)` is new (deduplication).
+3. Event engine evaluates the reading against baselines, the previous reading, and up to 24 recent readings.
+4. Triggered events are persisted and queryable via the API.
 
-Historical data will be used to establish baselines and thresholds, but live event detection will not depend on querying historical APIs during normal operation. Baselines will be precomputed and stored locally to keep event detection deterministic and efficient.
+## Technology choices
 
-### 24H Data
-Even though historical data can contribute to define relevant events, relying only on the latter can lead to an underestimation of events. This is why I will be using the last 24 hours weather data for each city, which will allow the system to identify sudden weather changes within the last 24 hours.
+| Choice | Why |
+|--------|-----|
+| **FastAPI** | Lightweight, async-ready, automatic OpenAPI docs, easy query params for `/readings` and `/events`. |
+| **SQLAlchemy + SQLite** | No external DB service needed; file persists in `./data` via Docker volume. Unique constraints enforce dedup at the schema level. |
+| **Open-Meteo** | Free, no API key, works from Docker; separate forecast (live) and archive (historical) endpoints. |
+| **pytest** | Standard Python testing; mocks for API calls keep CI fast and deterministic. |
 
-### Events
-1. Record Break: A record break event is triggered when a new extreme is observed for a given city and month, compared to the last 5 years of historical data.
+## Setup and run
 
-This includes:
-new monthly maximum temperature
-new monthly minimum temperature
+### Docker (recommended)
 
-These events are notable because they represent conditions that exceed known historical boundaries for that location and time of year.
+```bash
+git clone <your-repo>
+cd watchagent-challenge
+cp .env.example .env
+docker compose up --build
+```
 
-2. Historical Anomaly: A historical anomaly event is triggered when a reading falls in the extreme tail of the historical distribution for a given city and month. This is defined using percentile-based thresholds (e.g. outside the 5th or 95th percentile).
+- API: http://localhost:8000
+- Health check: http://localhost:8000/health
+- Database file: `./data/watchagent.db` (persists across container restarts)
 
-These events capture conditions that are statistically rare for that location and season, even if they are not absolute records.
+First startup may take a minute while historical data is ingested and baselines are built.
 
-3. Sudden tempreature change: This event is triggered when there is an abrupt change in temperature over a short period of time (within the last 24 hours), exceeding a threshold based on recent variability. The threshold is derived from the rolling standard deviation of recent temperature readings.
+### Local development
 
-These events represent sudden changes in thermal conditions, which may indicate instability in local weather patterns.
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+mkdir -p data
 
-4. Sudden wind change: This event follows a similar approach to temperature changes, but applied to wind speed. A sudden wind change is triggered when wind speed deviates significantly from recent values, based on a rolling mean and standard deviation over the last 24 hours.
+python -m app.bootstrap          # init DB + baselines if empty
+python -m app.services.poller &  # background poller
+uvicorn app.main:app --reload --port 8000
+```
 
-These events represent sudden changes in atmospheric conditions affecting local weather stability.
+## API reference
 
-5. Precipitation change: A precipitation event is triggered when there is a change in precipitation state.
+### `GET /health`
 
-This includes:
-precipitation starting (transition from 0 → > 0)
-precipitation stopping (transition from > 0 → 0)
+```bash
+curl http://localhost:8000/health
+```
 
-These events are important because they represent meaningful transitions in weather conditions that directly affect real-world perception and impact.
+```json
+{
+  "status": "ok",
+  "readings_stored": 12,
+  "events_stored": 11
+}
+```
+
+### `GET /readings`
+
+Optional query params: `city` (Ottawa | Toronto | Vancouver), `limit` (default 50).
+
+```bash
+curl "http://localhost:8000/readings?city=Toronto&limit=10"
+```
+
+```json
+{
+  "readings": [
+    {
+      "id": 1,
+      "city": "Toronto",
+      "timestamp": "2026-06-01T20:45",
+      "temperature_2m": 16.1,
+      "apparent_temperature": 15.0,
+      "precipitation": 0.0,
+      "wind_speed_10m": 2.4,
+      "weather_code": 0
+    }
+  ]
+}
+```
+
+Results are ordered most recent first.
+
+### `GET /events`
+
+Optional query params: `city`, `limit` (default 50).
+
+```bash
+curl "http://localhost:8000/events?city=Ottawa&limit=5"
+```
+
+```json
+{
+  "events": [
+    {
+      "id": 1,
+      "city": "Ottawa",
+      "timestamp": "2026-06-01T20:45",
+      "event_type": "SUDDEN_TEMP_CHANGE",
+      "reason": "temperature change exceeds 2x rolling std of recent readings",
+      "value": 2.8
+    }
+  ]
+}
+```
+
+## Event detection design
+
+Events answer: **what happened, in which city, when, and why it was notable.** Thresholds are derived from data — not hardcoded weather constants — so the same reading means different things in different cities and seasons.
+
+### Historical context (monthly baselines)
+
+On first run, ~90 days of archive data (`HISTORICAL_DATA_DAYS`) is ingested per city. Monthly baselines store mean, std, min, max, and p5/p95 for temperature and wind. Live polling never hits the archive API.
+
+| Event type | Rule | Trigger |
+|------------|------|---------|
+| `TEMP_ANOMALY` | TemperatureAnomalyRule | Temperature outside 2σ of monthly mean |
+| `TEMP_PERCENTILE_ANOMALY` | TemperatureAnomalyRule | Temperature outside 5th–95th percentile for that city/month |
+| `WIND_SPIKE` | WindSpikeRule | Wind speed outside 2σ of monthly baseline mean |
+| `RECORD_HIGH` | RecordBreakRule | Temperature above historical monthly max |
+| `RECORD_LOW` | RecordBreakRule | Temperature below historical monthly min |
+
+### Recent context (last 24 hours of live readings)
+
+| Event type | Rule | Trigger |
+|------------|------|---------|
+| `SUDDEN_TEMP_CHANGE` | SuddenTemperatureChangeRule | \|Δtemp\| vs previous reading > 2× rolling std of recent temps |
+| `SUDDEN_WIND_CHANGE` | SuddenWindChangeRule | \|Δwind\| vs previous reading > 2× rolling std of recent wind speeds |
+| `PRECIP_START` | PrecipitationChangeRule | Precipitation transitions 0 → > 0 |
+| `PRECIP_STOP` | PrecipitationChangeRule | Precipitation transitions > 0 → 0 |
+
+**Design rationale:** Historical baselines capture "unusual for this city and season." Recent-reading rules capture sudden shifts within the last day. Comparing against the **previous stored reading** (excluding the current one) avoids self-comparison bugs. City-specific baselines matter because Ottawa's normal swing differs from Vancouver's.
+
+## Tests
+
+```bash
+pip install -r requirements.txt
+python -m pytest tests/ -v
+```
+
+Coverage includes:
+- Each event rule (positive + negative cases)
+- API response shape for `/health`, `/readings`, `/events`
+- Poll deduplication integration test (same API response twice → one row)
+- Event engine orchestration
+
+CI runs on every push to `main` (see `.github/workflows/ci.yml`).
+
+## Environment variables
+
+See `.env.example`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:///./data/watchagent.db` | SQLite database path |
+| `POLL_INTERVAL_SECONDS` | `300` | Seconds between poll cycles |
+| `HISTORICAL_DATA_DAYS` | `90` | Days of archive data for baseline build |
+
+## Cursor setup
+
+This project uses Cursor rules, a custom agent, and a data analysis skill as part of the engineering workflow.
+
+### Rules (`.cursor/rules/`)
+
+| Rule | Purpose |
+|------|---------|
+| `event_rules.mdc` | Contract for event rules: interface, event dict shape, baseline-derived thresholds, safety (no exceptions/logging in rules). |
+| `logging.mdc` | Log levels and required context (city name) for poll/API failures and stored readings. |
+| `tests.mdc` | Test conventions: SimpleNamespace fakes, mock Open-Meteo, positive/negative cases per rule, dedup tests. |
+| `git-push.mdc` | Commit message quality and require user approval before `git push`. |
+
+### Agent (`.cursor/agents/`)
+
+**`event-rules-reviewer`** — Scoped to event detection code. Reviews or implements rules in `app/services/event_rules/`, checks threshold math, ensures tests follow conventions, and runs pytest after changes. Does not modify Docker or API routes unless event shapes change.
+
+Invoke via the agent picker or by referencing `@event-rules-reviewer` in chat.
+
+### Skill (`.cursor/skills/weather-data-analysis/`)
+
+Runnable Python script that queries the SQLite database and returns structured JSON analysis. Use when asking questions about stored readings, events, or city comparisons from within Cursor.
+
+```bash
+# Overview of stored data
+python .cursor/skills/weather-data-analysis/scripts/analyze.py summary
+
+# Compare cities by average temperature
+python .cursor/skills/weather-data-analysis/scripts/analyze.py compare-cities
+
+# Event counts by type
+python .cursor/skills/weather-data-analysis/scripts/analyze.py events-breakdown
+
+# Recent temperature trend for one city
+python .cursor/skills/weather-data-analysis/scripts/analyze.py recent-trends --city Toronto --limit 24
+```
+
+See `.cursor/skills/weather-data-analysis/SKILL.md` for the full command list.
+
+## Project layout
+
+```
+app/
+  main.py              # FastAPI endpoints
+  bootstrap.py         # DB init + baseline seeding
+  core/config.py       # Cities, URLs, env vars
+  db/                  # SQLAlchemy models + session
+  services/
+    poller.py          # Live weather polling
+    historical_ingestor.py
+    baseline_builder.py
+    event_rules/       # Event detection rules + engine
+tests/                 # Unit and integration tests
+.cursor/               # Rules, agent, skills
+.github/workflows/     # CI (test + docker build)
+```
